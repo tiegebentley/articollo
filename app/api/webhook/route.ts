@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
         formData.append("audio", new Blob([audioBuffer], { type: "audio/webm" }), "voice")
 
         console.log("[v0] Sending voice message to webhook with country:", body.country, "language:", body.language)
-        const response = await fetch("https://agrici.app.n8n.cloud/webhook/articollo", {
+        const webhookUrl = process.env.N8N_WEBHOOK_URL || "https://workflows.lustre-agency.com/webhook/articollo"
+        const response = await fetch(webhookUrl, {
           method: "POST",
           body: formData,
           signal: controller.signal,
@@ -111,7 +112,8 @@ export async function POST(request: NextRequest) {
         language: webhookPayload.language,
       })
 
-      const response = await fetch("https://agrici.app.n8n.cloud/webhook/articollo", {
+      const webhookUrl = process.env.N8N_WEBHOOK_URL || "https://workflows.lustre-agency.com/webhook/articollo"
+      const response = await fetch(webhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

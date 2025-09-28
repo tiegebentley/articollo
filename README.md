@@ -68,12 +68,26 @@ vercel
 
 ## Environment Variables
 
-If your app requires environment variables, create a `.env.local` file:
+Create a `.env.local` file in the root directory with your configuration:
 
 ```env
-# Add your environment variables here
-# NEXT_PUBLIC_API_URL=your-api-url
+# N8N Webhook Configuration (Required)
+N8N_WEBHOOK_URL=https://workflows.lustre-agency.com/webhook/articollo
+
+# OpenAI API Configuration (if needed by your N8N workflow)
+OPENAI_API_KEY=sk-your-openai-api-key-here
 ```
+
+### For Vercel Deployment:
+
+Add these environment variables in your Vercel project settings:
+1. Go to your project dashboard on Vercel
+2. Navigate to Settings → Environment Variables
+3. Add the following:
+   - `N8N_WEBHOOK_URL`: Your N8N webhook endpoint
+   - `OPENAI_API_KEY`: Your OpenAI API key (if needed)
+
+The webhook URL defaults to `https://workflows.lustre-agency.com/webhook/articollo` if not specified.
 
 ## Build Commands
 

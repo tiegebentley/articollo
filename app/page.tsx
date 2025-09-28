@@ -1,11 +1,11 @@
 "use client"
 
-import { MinimalChatInterface } from "@/components/features/chat/minimal-chat-interface"
+import { EnhancedChatInterface } from "@/components/features/chat/enhanced-chat-interface"
 
 export default function ArticolloChatPage() {
   return (
     <div className="h-screen w-full bg-background">
-      <MinimalChatInterface />
+      <EnhancedChatInterface />
     </div>
   )
 }

@@ -254,6 +254,7 @@ async function processMessageWithKeywords(
 
     // Extract seed keyword from user's message
     const seedKeyword = extractSeedKeyword(userPrompt)
+    const keywordCount = extractKeywordCount(userPrompt)
 
     try {
       // Fetch real keyword data from DataForSEO
@@ -261,7 +262,7 @@ async function processMessageWithKeywords(
         seedKeyword,
         country || "United States",
         language || "en",
-        30 // Get top 30 keywords
+        keywordCount // Use requested count (default 30, max 100)
       )
 
       keywordData = result.keywords
@@ -351,9 +352,28 @@ function detectKeywordIntent(message: string): boolean {
 }
 
 /**
+ * Extract requested keyword count from user message
+ */
+function extractKeywordCount(message: string): number {
+  const countMatch = message.match(/(\d+)\s*keywords/i)
+  if (countMatch) {
+    const count = parseInt(countMatch[1], 10)
+    // Cap at 100 to avoid excessive API costs
+    return Math.min(count, 100)
+  }
+  return 30 // default
+}
+
+/**
  * Extract seed keyword from user message
  */
 function extractSeedKeyword(message: string): string {
+  // Check for [KEYWORD_RESEARCH: ...] format first
+  const bracketMatch = message.match(/\[KEYWORD_RESEARCH:\s*([^\]]+)\]/i)
+  if (bracketMatch) {
+    return bracketMatch[1].trim()
+  }
+
   // Remove question words and extract main topic
   const cleaned = message
     .toLowerCase()
@@ -362,6 +382,8 @@ function extractSeedKeyword(message: string): string {
     .replace(/keyword ideas (for|about|on)/gi, "")
     .replace(/give me keywords (for|about|on)/gi, "")
     .replace(/show me keywords (for|about|on)/gi, "")
+    .replace(/give me a list of \d+ keywords (for|about|on|based on)/gi, "")
+    .replace(/i want you to give me a list of \d+ keywords (for|about|on|based on)/gi, "")
     .replace(/[?!.]/g, "")
     .trim()
 

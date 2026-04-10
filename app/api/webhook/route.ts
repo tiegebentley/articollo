@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import OpenAI from "openai"
+import { getKeywordIdeas, formatCompetition, formatDifficulty } from "@/lib/dataforseo"
 
 export const maxDuration = 60 // Vercel function timeout limit
 
@@ -22,6 +23,12 @@ Your mission is to help users:
 - Build topical authority roadmaps
 - Improve existing content
 - Answer questions about their niche and target audience
+
+IMPORTANT: When users ask about keywords, search volume, competition, or keyword research:
+1. Extract the main topic/keyword from their question
+2. Respond with: [KEYWORD_RESEARCH: topic_here]
+3. The system will automatically fetch real keyword data and display it in a table
+4. Then provide strategic advice on how to use those keywords
 
 Always provide:
 1. Actionable insights and specific recommendations
@@ -93,29 +100,25 @@ export async function POST(request: NextRequest) {
         const transcription = await openai.audio.transcriptions.create({
           file: audioFile,
           model: "whisper-1",
-          language: body.language?.toLowerCase().substring(0, 2) || "en", // Use first 2 chars (e.g., "EN" -> "en")
+          language: body.language?.toLowerCase().substring(0, 2) || "en",
         })
 
         const transcribedText = transcription.text
         console.log("[Articollo] Transcription:", transcribedText.substring(0, 100) + "...")
 
-        // Now process the transcribed text with GPT
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini", // Fast and cost-effective
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: transcribedText }
-          ],
-          temperature: 0.7,
-          max_tokens: 1500,
-        })
-
-        const aiResponse = completion.choices[0]?.message?.content || "I processed your voice message but couldn't generate a response."
+        // Process the transcribed text with keyword detection
+        const result = await processMessageWithKeywords(
+          openai,
+          transcribedText,
+          body.country,
+          body.language
+        )
 
         console.log("[Articollo] Voice message processed successfully")
         return NextResponse.json({
           success: true,
-          message: aiResponse,
+          message: result.message,
+          keywordData: result.keywordData,
           transcription: transcribedText,
           data: {
             model: "gpt-4o-mini",
@@ -128,7 +131,6 @@ export async function POST(request: NextRequest) {
       } catch (audioError: any) {
         console.error("[Articollo] Audio processing error:", audioError)
 
-        // Provide specific error messages
         if (audioError.message?.includes("API key")) {
           return NextResponse.json(
             { success: false, error: "Authentication failed. Please check API configuration." },
@@ -157,48 +159,35 @@ export async function POST(request: NextRequest) {
     try {
       console.log("[Articollo] Processing text message with GPT...")
 
-      // Create context-aware prompt
-      const userPrompt = body.message.trim()
-
-      // Add country/language context if provided
-      const contextPrompt = (body.country || body.language)
-        ? `\n\n[User context: ${body.country || 'Unknown country'}, ${body.language || 'English'}]`
-        : ''
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini", // Fast and cost-effective
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt + contextPrompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000,
-      })
-
-      const aiResponse = completion.choices[0]?.message?.content || "I couldn't generate a response. Please try rephrasing your question."
+      // Process message with keyword detection
+      const result = await processMessageWithKeywords(
+        openai,
+        body.message.trim(),
+        body.country,
+        body.language
+      )
 
       console.log("[Articollo] Text message processed successfully")
 
-      // Extract suggestions from response (look for action-oriented sentences)
-      const suggestions = extractSuggestions(aiResponse)
+      // Extract suggestions from response
+      const suggestions = extractSuggestions(result.message)
 
       return NextResponse.json({
         success: true,
-        message: aiResponse,
+        message: result.message,
         suggestions: suggestions,
+        keywordData: result.keywordData,
         data: {
           model: "gpt-4o-mini",
           type: "text",
           country: body.country,
           language: body.language,
-          tokens: completion.usage?.total_tokens || 0,
         }
       })
 
     } catch (textError: any) {
       console.error("[Articollo] Text processing error:", textError)
 
-      // Handle rate limits
       if (textError.status === 429) {
         return NextResponse.json(
           {
@@ -209,7 +198,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Handle authentication errors
       if (textError.status === 401 || textError.message?.includes("API key")) {
         return NextResponse.json(
           {
@@ -220,7 +208,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Generic error
       return NextResponse.json(
         {
           success: false,
@@ -244,33 +231,176 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Process message and detect if keyword research is needed
+ */
+async function processMessageWithKeywords(
+  openai: OpenAI,
+  userPrompt: string,
+  country?: string,
+  language?: string
+) {
+  const contextPrompt = (country || language)
+    ? `\n\n[User context: ${country || 'Unknown country'}, ${language || 'English'}]`
+    : ''
+
+  // Check if message is asking about keywords
+  const isKeywordQuestion = detectKeywordIntent(userPrompt)
+
+  let keywordData = null
+  let aiResponse = ""
+
+  if (isKeywordQuestion) {
+    console.log("[Articollo] Keyword intent detected, fetching real data...")
+
+    // Extract seed keyword from user's message
+    const seedKeyword = extractSeedKeyword(userPrompt)
+
+    try {
+      // Fetch real keyword data from DataForSEO
+      const result = await getKeywordIdeas(
+        seedKeyword,
+        country || "United States",
+        language || "en",
+        30 // Get top 30 keywords
+      )
+
+      keywordData = result.keywords
+
+      // Format keyword data for AI context
+      const keywordContext = formatKeywordDataForAI(result.keywords)
+
+      // Ask AI to analyze the keyword data
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `${userPrompt}${contextPrompt}\n\n[KEYWORD DATA AVAILABLE]\nI have real keyword data for "${seedKeyword}":\n${keywordContext}\n\nProvide strategic insights on how to use these keywords effectively. Focus on the high-value opportunities.`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      })
+
+      aiResponse = completion.choices[0]?.message?.content || "Here are the keyword metrics I found."
+
+    } catch (keywordError) {
+      console.error("[Articollo] Keyword data fetch failed:", keywordError)
+
+      // Fall back to AI-only response
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt + contextPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      })
+
+      aiResponse = completion.choices[0]?.message?.content || "I couldn't fetch keyword data at this time, but here's my advice..."
+    }
+
+  } else {
+    // Regular message without keyword research
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userPrompt + contextPrompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    })
+
+    aiResponse = completion.choices[0]?.message?.content || "I couldn't generate a response. Please try rephrasing your question."
+  }
+
+  return {
+    message: aiResponse,
+    keywordData: keywordData,
+  }
+}
+
+/**
+ * Detect if user is asking about keywords
+ */
+function detectKeywordIntent(message: string): boolean {
+  const lowerMessage = message.toLowerCase()
+
+  const keywordTriggers = [
+    "keyword",
+    "search volume",
+    "find keywords",
+    "keyword ideas",
+    "keyword research",
+    "what keywords",
+    "best keywords",
+    "keywords for",
+    "search terms",
+    "seo keywords",
+    "cpc",
+    "competition",
+    "keyword difficulty",
+    "rank for",
+    "search traffic",
+  ]
+
+  return keywordTriggers.some(trigger => lowerMessage.includes(trigger))
+}
+
+/**
+ * Extract seed keyword from user message
+ */
+function extractSeedKeyword(message: string): string {
+  // Remove question words and extract main topic
+  const cleaned = message
+    .toLowerCase()
+    .replace(/what are (the )?(best )?keywords (for|about|on|related to)/gi, "")
+    .replace(/find keywords (for|about|on|related to)/gi, "")
+    .replace(/keyword ideas (for|about|on)/gi, "")
+    .replace(/give me keywords (for|about|on)/gi, "")
+    .replace(/show me keywords (for|about|on)/gi, "")
+    .replace(/[?!.]/g, "")
+    .trim()
+
+  // Take first few words as seed
+  const words = cleaned.split(" ").slice(0, 5).join(" ")
+  return words || "seo"
+}
+
+/**
+ * Format keyword data for AI analysis
+ */
+function formatKeywordDataForAI(keywords: any[]): string {
+  const top10 = keywords.slice(0, 10)
+
+  return top10.map(kw =>
+    `- "${kw.keyword}": ${kw.search_volume.toLocaleString()} searches/mo, $${kw.cpc.toFixed(2)} CPC, ${formatCompetition(kw.competition)} competition, ${formatDifficulty(kw.keyword_difficulty)} difficulty`
+  ).join("\n")
+}
+
+/**
  * Extract suggested follow-up actions from AI response
- * Looks for action-oriented sentences at the end of the response
  */
 function extractSuggestions(content: string): string[] {
   const suggestions: string[] = []
 
-  // Split into lines and reverse to get last few lines
   const lines = content.split("\n")
     .map(line => line.trim())
     .filter(line => line.length > 0)
     .reverse()
 
-  // Look for action-oriented lines (starting with verbs)
-  const actionVerbs = /^(Start|Create|Analyze|Research|Build|Write|Generate|Find|Explore|Review|Compare|Focus|Try|Use|Implement|Test|Check|Consider|Look|Ask|Learn|Study|Investigate)/i
+  const actionVerbs = /^(Start|Create|Analyze|Research|Build|Write|Generate|Find|Explore|Review|Compare|Focus|Try|Use|Implement|Test|Check|Consider|Look|Ask|Learn|Study|Investigate|Target|Optimize)/i
 
   for (const line of lines) {
     if (suggestions.length >= 5) break
 
-    // Skip if too long or too short
     if (line.length > 120 || line.length < 15) continue
-
-    // Skip if it's a heading or list marker
     if (line.startsWith('#') || line.match(/^\d+\./)) continue
 
-    // Check if starts with action verb
     if (actionVerbs.test(line)) {
-      // Remove markdown and clean up
       const cleanLine = line
         .replace(/\*\*/g, '')
         .replace(/\*/g, '')

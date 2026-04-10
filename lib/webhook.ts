@@ -1,9 +1,19 @@
+export interface KeywordData {
+  keyword: string
+  search_volume: number
+  cpc: number
+  competition: number
+  keyword_difficulty: number
+  trend?: number[]
+}
+
 export interface WebhookResponse {
   success: boolean
   message?: string
   error?: string
   phase?: "research" | "creation" | "amplification"
   data?: any
+  keywordData?: KeywordData[]
 }
 
 export async function sendToWebhook(

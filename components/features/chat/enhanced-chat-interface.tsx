@@ -16,7 +16,8 @@ import { CountrySelector } from "@/components/ui/country-selector"
 import { SparklesText } from "@/components/ui/sparkles-text"
 import { TextShimmer } from "@/components/ui/text-shimmer"
 import { ChatHistorySidebar } from "./chat-history-sidebar"
-import { ChatStorage, type Chat, type Message } from "@/lib/chat-storage"
+import { ChatStorage, type Chat, type Message, type KeywordData } from "@/lib/chat-storage"
+import { KeywordTable } from "../keywords/keyword-table"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 
@@ -117,12 +118,13 @@ export function EnhancedChatInterface() {
     scrollToBottom()
   }, [messages])
 
-  const addMessage = (content: string, role: "user" | "assistant", audioUrl?: string) => {
+  const addMessage = (content: string, role: "user" | "assistant", keywordData?: KeywordData[]) => {
     const newMessage: Message = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role,
       content,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      keywordData: keywordData
     }
 
     setMessages(prev => [...prev, newMessage])
@@ -232,7 +234,7 @@ export function EnhancedChatInterface() {
       const response = await sendToWebhook(userMessage, undefined, selectedCountry, selectedLanguage)
 
       if (response.success && response.message) {
-        addMessage(response.message, "assistant")
+        addMessage(response.message, "assistant", response.keywordData)
       } else {
         addMessage(response.error || "Failed to get response", "assistant")
       }
@@ -269,7 +271,7 @@ export function EnhancedChatInterface() {
           const response = await sendToWebhook("[Voice Message]", base64Audio, selectedCountry, selectedLanguage)
 
           if (response.success && response.message) {
-            addMessage(response.message, "assistant")
+            addMessage(response.message, "assistant", response.keywordData)
           } else {
             addMessage(response.error || "Failed to process voice message", "assistant")
           }
@@ -535,6 +537,14 @@ export function EnhancedChatInterface() {
                           >
                             {cleanContent}
                           </ReactMarkdown>
+
+                          {/* Keyword Data Table */}
+                          {message.keywordData && message.keywordData.length > 0 && (
+                            <KeywordTable
+                              keywords={message.keywordData}
+                              location={selectedCountry.name}
+                            />
+                          )}
 
                           {suggestions.length > 0 && (
                             <div className="w-full mt-3 pt-3 border-t border-border/30">

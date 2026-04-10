@@ -1,8 +1,18 @@
+export interface KeywordData {
+  keyword: string
+  search_volume: number
+  cpc: number
+  competition: number
+  keyword_difficulty: number
+  trend?: number[]
+}
+
 export interface Message {
   id: string
   role: "user" | "assistant"
   content: string
   timestamp: number
+  keywordData?: KeywordData[]
 }
 
 export interface Chat {

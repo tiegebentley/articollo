@@ -1,12 +1,8 @@
 {
-  "buildCommand": "next build",
+  "buildCommand": "NEXT_PRIVATE_SKIP_TURBOPACK=1 next build",
   "outputDirectory": ".next",
   "devCommand": "next dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"],
-  "env": {
-    "NODE_ENV": "production",
-    "TURBOPACK": "0"
-  }
+  "regions": ["iad1"]
 }
